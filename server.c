@@ -1,146 +1,67 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <errno.h>
-#include <string.h>
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <netdb.h>
-#include <arpa/inet.h>
-#include <sys/wait.h>
-#include <signal.h>
-//defining the port number to which the clients will be connected
-#define PORT "3340" 
-//defining a constant for pending connections
-#define BACKLOG 10   
-
-#define MAXDATASIZE 100
-
-void sigchld_handler(int s)
+#include<sys/socket.h>
+#include<stdio.h>
+#include<string.h>
+#include<netdb.h>
+#include<stdlib.h>
+int main()
 {
-    
-    int saved_errno = errno;
-
-    while(waitpid(-1, NULL, WNOHANG) > 0);
-
-    errno = saved_errno;
+char msg[1024];
+int k;
+socklen_t len;
+int socket_desc,temp_socket_desc;
+struct sockaddr_in server,client;
+memset(&server,0,sizeof(server));
+memset(&client,0,sizeof(client));
+socket_desc=socket(AF_INET,SOCK_STREAM,0);
+if(socket_desc==-1)
+{
+printf("Error in socket creation");
+exit(1);
 }
-
-void *gettingaddress(struct sockaddr *sa)
-{
-    if (sa->sa_family == AF_INET) {
-        return &(((struct sockaddr_in*)sa)->sin_addr);
-    }
-
-    return &(((struct sockaddr_in6*)sa)->sin6_addr);
+server.sin_family=AF_INET;
+//giving the loop back address here
+server.sin_addr.s_addr=inet_addr("127.0.0.1");
+server.sin_port=3002;
+k=bind(socket_desc,(struct sockaddr*)&server,sizeof(server));
+if(k==-1){
+printf("Error in binding");
+exit(1);
 }
-
-int main(int argc, char *argv[])
+k=listen(socket_desc,20);
+if(k==-1)
 {
-    int sockfd, new_fd, numbytes;  // listen on sock_fd, new connection on new_fd
-    char buf[MAXDATASIZE];
-    struct addrinfo hints, *servinfo, *p;
-    struct sockaddr_storage their_addr; // connector's address information
-    socklen_t sin_size;
-    struct sigaction sa;
-    int yes=1;
-    char s[INET6_ADDRSTRLEN];
-    int rv;
-    
-    if (argc != 2) {
-        fprintf(stderr,"usage: ./client <portnumber>\n");
-        exit(1);
-    }
+printf("Error in listening");
+exit(1);
+}
+len=sizeof(client);
 
-    memset(&hints, 0, sizeof hints);
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = AI_PASSIVE; // use my IP
-
-    if ((rv = getaddrinfo(NULL, argv[1], &hints, &servinfo)) != 0) {
-        fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-        return 1;
-    }
-
-    // loop through all the results and bind to the first we can
-    for(p = servinfo; p != NULL; p = p->ai_next) {
-        if ((sockfd = socket(p->ai_family, p->ai_socktype,
-                p->ai_protocol)) == -1) {
-            perror("server: socket");
-            continue;
-        }
-
-        if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &yes,
-                sizeof(int)) == -1) {
-            perror("setsockopt");
-            exit(1);
-        }
-
-        if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) { //bind port
-            close(sockfd);
-            perror("server: bind");
-            continue;
-        }
-
-        break;
-    }
-
-    freeaddrinfo(servinfo); // all done with this structure
-
-    if (p == NULL)  {
-        fprintf(stderr, "server: failed to bind\n");
-        exit(1);
-    }
-
-    if (listen(sockfd, BACKLOG) == -1) { //start listening to start chats.
-        perror("listen");
-        exit(1);
-    }
-
-    sa.sa_handler = sigchld_handler; // reap all dead processes
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = SA_RESTART;
-    if (sigaction(SIGCHLD, &sa, NULL) == -1) {
-        perror("sigaction");
-        exit(1);
-    }
-
-    printf("I am the server and I am waiting for connections!!...\n");
-
-    while(1) {  // accept() loop
-        sin_size = sizeof their_addr;
-        new_fd = accept(sockfd, (struct sockaddr *)&their_addr, &sin_size);
-        if (new_fd == -1) {
-            perror("accept");
-            continue;
-        }
-
-        inet_ntop(their_addr.ss_family,
-            gettingaddress((struct sockaddr *)&their_addr),
-            s, sizeof s);
-        printf("server: got connection from %s\n", s);
-
-        /*Whenever the server accepts any incoming connection, it forks a new child process*/
-
-        if (!fork()) { 
-            close(sockfd); 
-            while(1){    
-                
-                if ((numbytes = recv(new_fd, buf, MAXDATASIZE-1, 0)) == -1) { 
-                    perror("recv");
-                    exit(1);
-                }
-                buf[numbytes] = '\0';
-                printf("%s\n", buf);
-                if(strcmp(buf, "End of Connection")==0){ 
-                    close(new_fd);
-                    exit(0);
-                }
-            }
-        }
-        close(new_fd);  // parent doesn't need this
-    }
-
-    return 0;
+temp_socket_desc=accept(socket_desc,(struct sockaddr*)&client,&len);
+if(temp_socket_desc==-1)
+{
+printf("Error in temporary socket creation");
+exit(1);
+}
+while(1)
+{
+k=recv(temp_socket_desc,msg,100,0);
+if(k==-1)
+{
+printf("Error in receiving");
+exit(1);
+}
+printf(" %s",msg);
+//printf("\nEnter data to be send to client: ");
+fgets(msg,sizeof msg,stdin);
+if(strncmp(msg,"end",3)==0)
+break;
+k=send(temp_socket_desc,msg,100,0);
+if(k==-1)
+{
+printf("Error in sending");
+exit(1);
+}
+}
+close(temp_socket_desc);
+exit(0);
+return 0;
 }
